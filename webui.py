@@ -18,17 +18,19 @@ sys.path.append(os.path.join(current_dir, "indextts"))
 
 import argparse
 parser = argparse.ArgumentParser(
-    description="IndexTTS WebUI",
+    description="IndexTTS WebUI with Embedded API",
     formatter_class=argparse.ArgumentDefaultsHelpFormatter,
 )
 parser.add_argument("--verbose", action="store_true", default=False, help="Enable verbose mode")
 parser.add_argument("--port", type=int, default=7860, help="Port to run the web UI on")
+parser.add_argument("--api_port", type=int, default=8000, help="Port to run the API server on")
 parser.add_argument("--host", type=str, default="0.0.0.0", help="Host to run the web UI on")
 parser.add_argument("--model_dir", type=str, default="./checkpoints", help="Model checkpoints directory")
 parser.add_argument("--fp16", action="store_true", default=False, help="Use FP16 for inference if available")
 parser.add_argument("--deepspeed", action="store_true", default=False, help="Use DeepSpeed to accelerate if available")
 parser.add_argument("--cuda_kernel", action="store_true", default=False, help="Use CUDA kernel for inference if available")
 parser.add_argument("--gui_seg_tokens", type=int, default=120, help="GUI: Max tokens per generation segment")
+parser.add_argument("--disable_api", action="store_true", default=False, help="Disable embedded API server")
 cmd_args = parser.parse_args()
 
 if not os.path.exists(cmd_args.model_dir):
@@ -50,6 +52,14 @@ for file in [
 import gradio as gr
 from indextts.infer_v2 import IndexTTS2
 from tools.i18n.i18n import I18nAuto
+
+# FastAPI imports (only if API is enabled)
+if not cmd_args.disable_api:
+    import uvicorn
+    from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+    from fastapi.responses import FileResponse
+    from pydantic import BaseModel
+    import io
 
 i18n = I18nAuto(language="Auto")
 MODE = 'local'
@@ -166,11 +176,151 @@ def update_prompt_audio():
     update_button = gr.update(interactive=True)
     return update_button
 
+<<<<<<< Updated upstream
 def create_warning_message(warning_text):
     return gr.HTML(f"<div style=\"padding: 0.5em 0.8em; border-radius: 0.5em; background: #ffa87d; color: #000; font-weight: bold\">{html.escape(warning_text)}</div>")
 
 def create_experimental_warning_message():
     return create_warning_message(i18n('提示：此功能为实验版，结果尚不稳定，我们正在持续优化中。'))
+
+# FastAPI setup (only if API is enabled)
+if not cmd_args.disable_api:
+    # Initialize FastAPI app
+    app = FastAPI(title="IndexTTS2 API", description="API for IndexTTS2: A Breakthrough in Emotionally Expressive and Duration-Controlled Auto-Regressive Zero-Shot Text-to-Speech")
+
+    # Request models
+    class TTSRequest(BaseModel):
+        text: str
+        emo_alpha: float = 1.0
+        emo_vector: list[float] = None
+        use_emo_text: bool = False
+        emo_text: str = None
+        use_random: bool = False
+        max_text_tokens_per_segment: int = 120
+        do_sample: bool = True
+        top_p: float = 0.8
+        top_k: int = 30
+        temperature: float = 0.8
+        length_penalty: float = 0.0
+        num_beams: int = 3
+        repetition_penalty: float = 10.0
+        max_mel_tokens: int = 1500
+
+    # Response models
+    class TTSResponse(BaseModel):
+        audio_path: str = None
+        message: str = None
+
+    @app.get("/")
+    async def root():
+        return {"message": "IndexTTS2 API server is running"}
+
+    @app.post("/tts", response_model=TTSResponse)
+    async def text_to_speech(
+        spk_audio_prompt: UploadFile = File(...),
+        text: str = Form(""),
+        emo_audio_prompt: UploadFile = File(None),
+        emo_alpha: float = Form(1.0),
+        emo_vector: str = Form(None),
+        use_emo_text: bool = Form(False),
+        emo_text: str = Form(None),
+        use_random: bool = Form(False),
+        max_text_tokens_per_segment: int = Form(120),
+        do_sample: bool = Form(True),
+        top_p: float = Form(0.8),
+        top_k: int = Form(30),
+        temperature: float = Form(0.8),
+        length_penalty: float = Form(0.0),
+        num_beams: int = Form(3),
+        repetition_penalty: float = Form(10.0),
+        max_mel_tokens: int = Form(1500)
+    ):
+        # 检查text参数是否为空或只包含空格
+        print(f"接收到的text参数: '{text}'")
+        print(f"text参数类型: {type(text)}")
+        if not text or not text.strip():
+            raise HTTPException(status_code=400, detail="Text parameter is required and cannot be empty")
+        
+        try:
+            # Save speaker audio prompt to temporary file
+            spk_audio_content = await spk_audio_prompt.read()
+            spk_audio_path = f"temp_spk_{int(time.time())}.wav"
+            with open(spk_audio_path, "wb") as f:
+                f.write(spk_audio_content)
+            
+            # Handle emotion reference audio if provided
+            emo_audio_path = None
+            if emo_audio_prompt and emo_audio_prompt.filename:
+                emo_audio_content = await emo_audio_prompt.read()
+                emo_audio_path = f"temp_emo_{int(time.time())}.wav"
+                with open(emo_audio_path, "wb") as f:
+                    f.write(emo_audio_content)
+            
+            # Parse emo_vector if provided as string
+            if emo_vector:
+                try:
+                    emo_vector = [float(x.strip()) for x in emo_vector.split(",")]
+                except ValueError:
+                    raise HTTPException(status_code=400, detail="Invalid emo_vector format. Must be comma-separated floats.")
+            
+            # Prepare output path
+            output_path = f"output_{int(time.time())}.wav"
+            
+            # Prepare generation kwargs
+            generation_kwargs = {
+                "do_sample": do_sample,
+                "top_p": top_p,
+                "top_k": top_k,
+                "temperature": temperature,
+                "length_penalty": length_penalty,
+                "num_beams": num_beams,
+                "repetition_penalty": repetition_penalty,
+                "max_mel_tokens": max_mel_tokens
+            }
+            
+            # Call TTS inference
+            result = tts.infer(
+                spk_audio_prompt=spk_audio_path,
+                text=text.strip(),
+                output_path=output_path,
+                emo_audio_prompt=emo_audio_path,
+                emo_alpha=emo_alpha,
+                emo_vector=emo_vector,
+                use_emo_text=use_emo_text,
+                emo_text=emo_text,
+                use_random=use_random,
+                verbose=cmd_args.verbose,
+                max_text_tokens_per_segment=max_text_tokens_per_segment,
+                **generation_kwargs
+            )
+            
+            # Clean up temporary files
+            if os.path.exists(spk_audio_path):
+                os.remove(spk_audio_path)
+            if emo_audio_path and os.path.exists(emo_audio_path):
+                os.remove(emo_audio_path)
+                
+            return TTSResponse(audio_path=output_path, message="Speech synthesis completed successfully")
+            
+        except Exception as e:
+            # Clean up any temporary files in case of error
+            if 'spk_audio_path' in locals() and os.path.exists(spk_audio_path):
+                os.remove(spk_audio_path)
+            if 'emo_audio_path' in locals() and emo_audio_path and os.path.exists(emo_audio_path):
+                os.remove(emo_audio_path)
+            if 'output_path' in locals() and os.path.exists(output_path):
+                os.remove(output_path)
+                
+            raise HTTPException(status_code=500, detail=f"Error during speech synthesis: {str(e)}")
+
+    @app.get("/download/{filename}")
+    async def download_audio(filename: str):
+        file_path = filename
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        # Return file content
+        return FileResponse(file_path, media_type="audio/wav", filename=filename)
 
 with gr.Blocks(title="IndexTTS Demo") as demo:
     mutex = threading.Lock()
@@ -439,4 +589,23 @@ with gr.Blocks(title="IndexTTS Demo") as demo:
 
 if __name__ == "__main__":
     demo.queue(20)
+    
+    if not cmd_args.disable_api:
+        # Start FastAPI server in a separate thread
+        import threading
+        import uvicorn
+        
+        def run_api_server():
+            uvicorn.run(app, host=cmd_args.host, port=cmd_args.api_port, log_level="info")
+        
+        api_thread = threading.Thread(target=run_api_server, daemon=True)
+        api_thread.start()
+        print(f"API server started on http://{cmd_args.host}:{cmd_args.api_port}")
+        
+        # Wait a moment for API server to start
+        import time
+        time.sleep(2)
+    
+    # Start Gradio WebUI
+    print(f"Starting WebUI on http://{cmd_args.host}:{cmd_args.port}")
     demo.launch(server_name=cmd_args.host, server_port=cmd_args.port)

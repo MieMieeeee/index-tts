@@ -270,6 +270,24 @@ available options can be seen via the following command:
 uv run webui.py -h
 ```
 
+##### Starting WebUI with API Server
+
+The project provides several batch scripts to start both the WebUI and API server simultaneously:
+
+- `start_webui.bat`: Start WebUI with default settings and API server
+- `start_webui_fp16.bat`: Start WebUI with FP16 acceleration and API server
+- `start_webui_deepspeed.bat`: Start WebUI with DeepSpeed acceleration and API server
+- `start_webui_full_acceleration.bat`: Start WebUI with both FP16 and DeepSpeed acceleration and API server
+
+When using these scripts, the API server will run in the background on `http://localhost:8000`,
+while the WebUI will be available on `http://localhost:7860`.
+
+If you prefer to run only the API server without the WebUI, you can use the `start_api_only.bat` script:
+
+- `start_api_only.bat`: Start only the API server
+
+All scripts will automatically activate the virtual environment if it exists.
+
 Have fun!
 
 > [!IMPORTANT]
@@ -403,6 +421,52 @@ tts.infer(voice, text, 'gen.wav')
 
 For more detailed information, see [README_INDEXTTS_1_5](archive/README_INDEXTTS_1_5.md),
 or visit the IndexTTS1 repository at <a href="https://github.com/index-tts/index-tts/tree/v1.5.0">index-tts:v1.5.0</a>.
+
+
+## 🌐 API Server
+
+IndexTTS2 also provides a RESTful API server for integration with other applications. The API server is built with FastAPI and offers the same functionality as the WebUI.
+
+### Starting the API Server
+
+To start the API server, run:
+
+```bash
+uv run python api_server.py
+```
+
+By default, the server will run on `http://0.0.0.0:8000`. You can customize the host and port with command-line arguments:
+
+```bash
+uv run python api_server.py --host 127.0.0.1 --port 8080
+```
+
+### API Endpoints
+
+- `POST /tts`: Perform text-to-speech synthesis
+  - Parameters:
+    - `spk_audio_prompt` (file): Speaker reference audio file
+    - `text` (string): Text to synthesize
+    - `emo_audio_prompt` (file, optional): Emotion reference audio file
+    - `emo_alpha` (float, optional): Emotion weight (0.0-1.6, default: 1.0)
+    - `emo_vector` (string, optional): Emotion vector as comma-separated values
+    - `use_emo_text` (boolean, optional): Enable emotion text control
+    - `emo_text` (string, optional): Emotion description text
+    - `use_random` (boolean, optional): Enable random sampling
+    - `max_text_tokens_per_segment` (int, optional): Maximum tokens per segment
+    - Various generation parameters (do_sample, top_p, top_k, temperature, etc.)
+
+- `GET /download/{filename}`: Download generated audio file
+
+### API Usage Example
+
+You can use the provided test script to test the API:
+
+```bash
+uv run python test_api.py
+```
+
+This script will send a TTS request using `examples/mie_refrence.wav` as the reference audio and save the generated audio as `generated_tts.wav`.
 
 
 ## Our Releases and Demos
